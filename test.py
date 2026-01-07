@@ -1,6 +1,6 @@
 from nlp import tokenize_with_pos,classify_hsk_level_of_text
-from data import df_characters, df_words, df_hand_written_characters, df_grammar
-
+from hsk_data import df_characters, df_words, df_hand_written_characters, df_grammar
+import json 
 
 # =========================
 # 1. 数据概览（Data Overview）
@@ -109,3 +109,24 @@ print(df_grammar.head())
 print("\n\n" + "*" * 5 + "分级测试示例" + "*" * 5)
 level = classify_hsk_level_of_text("我觉得大家都该有高远的理想，闯出一片事业。我爱学习人工智能。它是未来的发展方向！")
 print("HSK Level Classification Result:", level)
+
+
+# =========================
+# 7.  sample news 等级测试
+# =========================
+print("\n\n" + "*" * 5 + "Sample News 等级测试" + "*" * 5)
+
+json_file = "sample_news.json"
+with open(json_file, "r", encoding="utf-8") as f:
+    articles = json.load(f)
+
+for article in articles:
+    title = article.get("title", "")
+    content = article.get("content", "")
+    full_text = title + "\n" + content
+    print(f"Title: {title}\n")
+    level = classify_hsk_level_of_text(full_text)
+    print("HSK Level Classification Result:", level, end="\n")
+    print("Full Text:", full_text, end="\n\n")
+
+    

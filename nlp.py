@@ -1,13 +1,13 @@
 ## quick validation of the data
 from ltp import LTP
-from data import hsk_words, hsk_characters, hsk_grammar_with_regex
+from hsk_data import hsk_words, hsk_characters, hsk_grammar_with_regex
 import re
 
 ltp = LTP("LTP/small") #  other models: LTP/base, LTP/small, LTP/tiny, LTP/legacy
 
 def tokenize_with_pos(sentence):
     cws, pos = ltp.pipeline([sentence], tasks=["cws", "pos"]).to_tuple()
-    print(cws, pos)
+    # print(cws, pos)
     return list(zip(cws[0], pos[0]))
 
 # classify using hsk_words dict
@@ -113,10 +113,13 @@ def classify_hsk_level_of_text(paragraph):
    # the level should be determined by the most common level of words in the text as long as the higher level words are not too many
     level_counts = {level: len(word_levels[level]) for level in word_levels}
     total_words = sum(level_counts.values())
+
+    # show word level distribution
+    print("Word Level Distribution:", level_counts) 
+
     # iterate the levels in reverse order
     acc_count = 0
     for level in ["高等", "六级", "五级", "四级", "三级", "二级", "一级"]:
         acc_count += level_counts[level]
         if acc_count / total_words > 0.1:  # more than 10% words are of this level
             return level
-    
