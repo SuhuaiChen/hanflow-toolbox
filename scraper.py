@@ -201,13 +201,15 @@ def scrape():
     # Save aggregated data
     if all_news_data:
         try:
-            with open(output_filename, "w", encoding="utf-8") as f:
-                json.dump(all_news_data, f, ensure_ascii=False, indent=4)
+            # with open(output_filename, "w", encoding="utf-8") as f:
+            #     json.dump(all_news_data, f, ensure_ascii=False, indent=4)
+            return all_news_data
             logger.info(f"Successfully saved {len(all_news_data)} articles to {output_filename}")
         except IOError as e:
             logger.error(f"Failed to save aggregated file: {e}")
     else:
         logger.warning(f"No news found for {today_str}. JSON file was not created.")
+        return []
 
 if __name__ == "__main__":
     scrape()

@@ -116,7 +116,7 @@ print("HSK Level Classification Result:", level)
 # =========================
 print("\n\n" + "*" * 5 + "Sample News 等级测试" + "*" * 5)
 
-json_file = "sample_news.json"
+json_file = "news_leveled_26_01_08.json"
 with open(json_file, "r", encoding="utf-8") as f:
     articles = json.load(f)
 
@@ -125,8 +125,7 @@ for article in articles:
     content = article.get("content", "")
     full_text = title + "\n" + content
     print(f"Title: {title}\n")
+    print(f"target level: {article.get('level', 'N/A')}\n")
     level = classify_hsk_level_of_text(full_text)
     print("HSK Level Classification Result:", level, end="\n")
     print("Full Text:", full_text, end="\n\n")
-
-    

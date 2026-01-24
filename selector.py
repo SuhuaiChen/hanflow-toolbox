@@ -1,3 +1,4 @@
+import logging
 import os
 import json
 import time
@@ -5,6 +6,8 @@ from typing import List, Dict, Any, Literal
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
 from openai import OpenAI
+from scraper import scrape
+from datetime import datetime
 
 # Load environment variables from .env file
 load_dotenv()
@@ -41,7 +44,7 @@ def _call_json_schema(prompt_messages: List[Dict[str, str]], schema_name: str, s
                     }
                 },
             )
-            print(resp)
+            # print(resp)
             return json.loads(resp.output_text)
         except Exception as e:
             last_err = e
@@ -157,6 +160,7 @@ def pick_articles_by_title(articles: List[Dict[str, Any]]) -> Dict[str, List[int
 # Step 2: rewrite title + content for each level
 # ---------------------------
 def rewrite_article(article: Dict[str, Any], level: Level) -> Dict[str, Any]:
+    logging.info(f"Rewriting article {article.get('title', '')} for level {level}...")
     schema = {
         "type": "object",
         "properties": {
@@ -244,15 +248,12 @@ def build_leveled_set(articles: List[Dict[str, Any]], parallel: bool = True) -> 
     results.sort(key=lambda a: (order.get(a["level"], 9), a.get("published", ""), a.get("title", "")))
     return results
    
-
 if __name__ == "__main__":
-    
-    with open("news_26_01_07.json", "r", encoding="utf-8") as f:
-        articles = json.load(f)
 
+    articles = scrape()
     leveled = build_leveled_set(articles, parallel=True)
     print(json.dumps(leveled, ensure_ascii=False, indent=2))
-
     # store the output
-    with open("news_leveled_26_01_07.json", "w", encoding="utf-8") as f:
+    now = datetime.now()
+    with open(f"news_leveled_{now.strftime('%y_%m_%d')}.json", "w", encoding="utf-8") as f:
         json.dump(leveled, f, ensure_ascii=False, indent=4)
