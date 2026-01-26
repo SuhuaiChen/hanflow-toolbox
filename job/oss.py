@@ -1,7 +1,6 @@
 import os
 import io
 import hashlib
-from typing import Tuple
 import httpx
 import boto3
 from botocore.client import Config
@@ -10,7 +9,10 @@ from pydub import AudioSegment
 from tts import synthesize_speech
 from dotenv import load_dotenv
 
-load_dotenv()
+try:
+    load_dotenv()
+except Exception:
+    pass
 
 def build_public_url(key: str) -> str:
     base = os.getenv("R2_PUBLIC_BASE_URL")

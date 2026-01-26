@@ -9,8 +9,10 @@ from openai import OpenAI
 from scraper import scrape
 from datetime import datetime
 
-# Load environment variables from .env file
-load_dotenv()
+try:
+    load_dotenv()
+except Exception:
+    pass
 
 Level = Literal["beginner", "intermediate", "advanced"]
 

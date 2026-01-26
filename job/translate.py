@@ -1,3 +1,4 @@
+from functools import lru_cache
 import json
 import os
 import random
@@ -5,12 +6,18 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 from dotenv import load_dotenv
-
 from openai import OpenAI
 from openai import APIError, APITimeoutError, RateLimitError
 
-load_dotenv()
-client = OpenAI()
+try:
+    load_dotenv()
+except Exception:
+    pass
+
+@lru_cache(maxsize=1)
+def get_openai_client() -> OpenAI:
+    # if OPENAI_API_KEY is set, the SDK will pick it up automatically
+    return OpenAI()
 
 # -------------------------
 # Config
@@ -58,6 +65,7 @@ def _json_schema_call(
     base_sleep: float,
 ) -> Any:
     def _call():
+        client = get_openai_client()
         resp = client.responses.create(
             model=model,
             reasoning={"effort": "low"},
@@ -186,6 +194,7 @@ def llm_translate_text_triple(zh_text: str, max_retries: int = 3) -> Dict[str, s
     )
 
     def _call():
+        client = get_openai_client()
         resp = client.responses.create(
             model=CFG.model_translate,
             reasoning={"effort": "low"},

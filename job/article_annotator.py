@@ -7,7 +7,7 @@ from hsk_data import load_hsk_words
 from nlp import tokenize_with_pos, transform_tokens, split_to_sentence_objects
 from pinyin_convert import pinyin_num_to_tone
 from translate import llm_translate_text_triple
-from db import ensure_dict_entry, client
+from db import ensure_dict_entry, create_mongo_client
 from oss import attach_tts_audio
 import hashlib
 
@@ -234,6 +234,7 @@ def annotate_articles(
 if __name__ == "__main__":
     lexicon = load_cedict_simplified("data/cedict_ts.u8")
     hsk_words = load_hsk_words()
+    client = create_mongo_client()
     db = client["core"]
     vocab_col = db["dict"]
     test_sentence = "我喜欢学习汉语，因为它很有趣！"

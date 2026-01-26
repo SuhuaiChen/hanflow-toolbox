@@ -1,3 +1,4 @@
+from functools import lru_cache
 from typing import List, Dict, Tuple
 from ltp import LTP, StnSplit
 from cedict import load_cedict_simplified
@@ -5,9 +6,17 @@ from hsk_data import load_hsk_characters, load_hsk_words, df_load_hsk_grammar_wi
 from pypinyin import pinyin, Style
 import re
 
-ltp = LTP("LTP/small") #  other models: LTP/base, LTP/small, LTP/tiny, LTP/legacy
+@lru_cache(maxsize=1)
+def get_ltp(model_name: str = "LTP/small"):
+    # loads once per process
+    return LTP(model_name)
+
+@lru_cache(maxsize=1)
+def get_splitter():
+    return StnSplit()
 
 def tokenize_with_pos(sentence):
+    ltp = get_ltp()
     cws, pos = ltp.pipeline([sentence], tasks=["cws", "pos"]).to_tuple()
     # print(cws, pos)
     return list(zip(cws[0], pos[0]))
@@ -124,7 +133,7 @@ def split_to_sentence_objects(text: str) -> List[Dict]:
       ...
     ]
     """
-    sents = StnSplit().split(text)
+    sents = get_splitter().split(text)
     return [{"sid": f"s{i+1}", "zh": s} for i, s in enumerate(sents)]
 
 def sentence_to_tokens(sentence: str) -> List[Dict]:

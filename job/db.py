@@ -11,17 +11,21 @@ from pinyin_convert import pinyin_tone_to_num
 from oss import attach_tts_audio
 from datetime import datetime, timezone
 
-load_dotenv()
-
-# Create a new client and connect to the server
-client = MongoClient(os.environ["MONGODB_URI"], server_api=ServerApi('1'))
-
-# Send a ping to confirm a successful connection
 try:
-    client.admin.command('ping')
-    print("Pinged your deployment. You successfully connected to MongoDB!")
-except Exception as e:
-    print(e)
+    load_dotenv()
+except Exception:
+    pass
+
+def create_mongo_client() -> MongoClient:
+    # Create a new client and connect to the server
+    client = MongoClient(os.environ["MONGODB_URI"], server_api=ServerApi('1'))
+    # Send a ping to confirm a successful connection
+    try:
+        client.admin.command('ping')
+        print("Pinged your deployment. You successfully connected to MongoDB!")
+    except Exception as e:
+        print(e)
+    return client
 
 def ensure_dict_entry(word: str, col, lexicon, hsk_words, s3) -> dict:
     doc = col.find_one({"_id": word})
@@ -76,6 +80,7 @@ def ensure_dict_entry(word: str, col, lexicon, hsk_words, s3) -> dict:
     return doc
 
 if __name__ == "__main__":
+    client = create_mongo_client()
     db = client["core"]
     vocab_col = db["dict"]
     test_word = "中文"

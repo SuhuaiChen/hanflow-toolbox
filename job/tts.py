@@ -4,7 +4,10 @@ from dotenv import load_dotenv
 import time
 import random
 
-load_dotenv()
+try:
+    load_dotenv()
+except Exception:
+    pass
 
 def _retry(
     fn,
