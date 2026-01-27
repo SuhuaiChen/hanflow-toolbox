@@ -5,11 +5,13 @@ from cedict import load_cedict_simplified
 from hsk_data import load_hsk_characters, load_hsk_words, df_load_hsk_grammar_with_regex
 from pypinyin import pinyin, Style
 import re
+import os
 
 @lru_cache(maxsize=1)
-def get_ltp(model_name: str = "LTP/small"):
+def get_ltp():
+    model_dir = os.getenv("LTP_MODEL_DIR", "/app/models/ltp-small")
     # loads once per process
-    return LTP(model_name)
+    return LTP(model_dir, local_files_only=True)
 
 @lru_cache(maxsize=1)
 def get_splitter():

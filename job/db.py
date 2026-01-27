@@ -84,6 +84,6 @@ if __name__ == "__main__":
     db = client["core"]
     vocab_col = db["dict"]
     test_word = "中文"
-    lexicon = load_cedict_simplified("data/cedict_ts.u8")
-    entry = ensure_dict_entry(test_word, vocab_col, lexicon, hsk_words=load_hsk_words())
-    print(entry)
+    # lexicon = load_cedict_simplified("data/cedict_ts.u8")
+    # entry = ensure_dict_entry(test_word, vocab_col, lexicon, hsk_words=load_hsk_words())
+    # print(entry)

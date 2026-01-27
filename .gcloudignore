@@ -1,0 +1,17 @@
+# Keep the usual ignores
+.DS_Store
+__pycache__/
+.venv/
+.env
+.git/
+secrets.env
+
+# Ignore data folder by default (same as gitignore)
+data/*
+
+# But INCLUDE the two files you need for the image
+!data/cedict_ts.u8
+!data/words.csv
+
+# Make sure job is included
+!job/**
