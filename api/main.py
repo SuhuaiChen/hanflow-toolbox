@@ -205,6 +205,48 @@ async def get_user_data(uid: str = Depends(get_firebase_user_id)):
     return doc
 
 
+@app.put("/user/data/tokens", status_code=204)
+async def put_user_tokens(payload: TokensPayload, uid: str = Depends(get_firebase_user_id)):
+    col = user_data_col()
+    col.update_one(
+        {"uid": uid},
+        {"$set": {"tokens": [t.model_dump() for t in payload.tokens], "updatedAt": datetime.now(timezone.utc)}},
+        upsert=True,
+    )
+    return None
+
+
+@app.post("/user/data/history", status_code=204)
+async def post_user_history(entry: ReadEntryIn, uid: str = Depends(get_firebase_user_id)):
+    col = user_data_col()
+    # Idempotency: no-op if articleId already exists
+    doc = col.find_one({"uid": uid}, {"history": 1})
+    if doc:
+        existing_ids = [h.get("articleId") for h in doc.get("history", [])]
+        if entry.articleId in existing_ids:
+            return None
+    col.update_one(
+        {"uid": uid},
+        {
+            "$push": {"history": entry.model_dump()},
+            "$set": {"updatedAt": datetime.now(timezone.utc)},
+        },
+        upsert=True,
+    )
+    return None
+
+
+@app.patch("/user/data/history/{article_id}", status_code=204)
+async def patch_history_completed(article_id: str, uid: str = Depends(get_firebase_user_id)):
+    col = user_data_col()
+    # Silent no-op if article_id not found — do NOT use upsert
+    col.update_one(
+        {"uid": uid, "history.articleId": article_id, "history.completedAt": None},
+        {"$set": {"history.$.completedAt": int(datetime.now(timezone.utc).timestamp() * 1000), "updatedAt": datetime.now(timezone.utc)}},
+    )
+    return None
+
+
 @app.post("/feedback", status_code=204)
 async def create_feedback(payload: FeedbackIn, request: Request):
     msg = payload.message.strip()
