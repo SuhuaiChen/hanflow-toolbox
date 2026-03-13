@@ -247,6 +247,17 @@ async def patch_history_completed(article_id: str, uid: str = Depends(get_fireba
     return None
 
 
+@app.put("/user/data/tests/{article_id}", status_code=204)
+async def put_user_test(article_id: str, result: TestResultIn, uid: str = Depends(get_firebase_user_id)):
+    col = user_data_col()
+    col.update_one(
+        {"uid": uid},
+        {"$set": {f"tests.{article_id}": result.model_dump(), "updatedAt": datetime.now(timezone.utc)}},
+        upsert=True,
+    )
+    return None
+
+
 @app.post("/feedback", status_code=204)
 async def create_feedback(payload: FeedbackIn, request: Request):
     msg = payload.message.strip()
