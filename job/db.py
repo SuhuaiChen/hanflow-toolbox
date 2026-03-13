@@ -72,7 +72,7 @@ def ensure_dict_entry(word: str, col, lexicon, hsk_words, s3) -> dict:
         m.setdefault("pt", trans["pt"])
         doc["source"]["espt"] = "llm"
     
-    audio_url = attach_tts_audio(text=word, s3=s3)
+    audio_url = attach_tts_audio(text=word, s3=s3, kind="tokens")
     doc.setdefault("audio", audio_url)
 
     doc["updatedAt"] = datetime.now(timezone.utc)

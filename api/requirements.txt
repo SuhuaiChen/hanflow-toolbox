@@ -2,3 +2,9 @@ fastapi
 uvicorn[standard]
 pymongo
 python-dotenv
+email-validator
+requests
+openai
+certifi
+pyjwt[crypto]
+pydantic[email]

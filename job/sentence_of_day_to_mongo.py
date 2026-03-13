@@ -40,10 +40,7 @@ STRICT RULES (must follow all):
 - Language: Simplified Chinese only
 - Length: 12–20 Chinese characters
 - No quotes, no emojis, no exclamation marks
-- Grammar level: HSK2–HSK4 only
 - Natural, spoken Mandarin
-- Must be understandable without any context
-- No metaphors that require explanation
 
 TONE
 - Gentle, grounded, emotionally warm
@@ -53,7 +50,6 @@ THEMES: choose ONE of them
 - personal growth
 - aesthetics of nature
 - chinese philosophy
-- mindfulness and well-being
 
 OUTPUT FORMAT (VERY IMPORTANT):
 Only output the Chinese sentence.

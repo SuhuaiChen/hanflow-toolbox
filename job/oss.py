@@ -94,13 +94,20 @@ def attach_tts_audio(
     *,
     s3,
     text: str,
-    voice: str = "Kai",
+    voice: str = "Ethan",
     language: str = "zh",
     kind: str = "sentence", 
     bitrate: str = "64k",
+    date : str = "",
+
 ) -> tuple[str, str]:
     cache_id = sha1_hex(f"{kind}|{voice}|{language}|{text}")
-    object_key = f"tts/{language}/{voice}/{kind}/{cache_id}.mp3"
+
+    if date :
+        # Use date to organize TTS files by date
+        object_key = f"tts/{language}/{voice}/{kind}/{date}/{cache_id}.mp3"
+    else:
+        object_key = f"tts/{language}/{voice}/{kind}/{cache_id}.mp3"
 
     bucket = os.environ["R2_BUCKET"]
 
@@ -114,14 +121,46 @@ def attach_tts_audio(
 
     return url
 
+
+def delete_prefix(s3, bucket: str, prefix: str, dry_run: bool = False) -> int:
+    paginator = s3.get_paginator("list_objects_v2")
+    deleted = 0
+    batch = []
+
+    for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            key = obj["Key"]
+            if dry_run:
+                print(key)
+                continue
+
+            batch.append({"Key": key})
+            if len(batch) == 1000:
+                s3.delete_objects(Bucket=bucket, Delete={"Objects": batch})
+                deleted += len(batch)
+                batch = []
+
+    if (not dry_run) and batch:
+        s3.delete_objects(Bucket=bucket, Delete={"Objects": batch})
+        deleted += len(batch)
+
+    return deleted
+
+
 if __name__ == "__main__":
     text = "你好，欢迎使用汉流工具箱！"
     result = attach_tts_audio(
         s3=r2_client(),
         text=text,
-        voice="Kai",
+        voice="Ethan",
         language="Chinese",
         kind="sentence",
         bitrate="64k",
     )
     print(f"Public URL {result['url']}")
+
+    # s3 = r2_client()
+    # bucket = os.environ["R2_BUCKET"]
+    # prefix = "tts/zh/Kai/sentence"
+    # deleted_count = delete_prefix(s3, bucket, prefix, dry_run=False)
+    # print(f"Deleted {deleted_count} objects with prefix '{prefix}'")

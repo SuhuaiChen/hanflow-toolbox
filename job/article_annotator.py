@@ -44,6 +44,8 @@ def enrich_tokens_with_dict(tokens: List[Dict], vocab_col, cedict_lexicon, hsk_w
         if entry.get("pinyin") and not tok.get("pinyin"):
             tok["pinyin"] = pinyin_num_to_tone(entry["pinyin"])
 
+        tok["audio"] = entry.get("audio", "")
+
     return tokens
 
 def annotate_sentence(
@@ -52,7 +54,8 @@ def annotate_sentence(
     vocab_col,
     cedict_lexicon,
     hsk_words: Dict[str, str],
-    s3
+    s3,
+    date: str = ""
 ) -> Dict[str, Any]:
     # 1) translate sentence
     triple = llm_translate_text_triple(zh)
@@ -67,7 +70,7 @@ def annotate_sentence(
     tokens = enrich_tokens_with_dict(tokens, vocab_col, cedict_lexicon, hsk_words, s3)
 
     # TTS
-    audio_url = attach_tts_audio(text=zh, s3=s3)
+    audio_url = attach_tts_audio(text=zh, s3=s3, date=date)
 
     return {
         "sid": sid,
@@ -98,20 +101,21 @@ def annotate_article(
     """
 
     article_id = make_article_id(raw_article)
+    published_date = raw_article.get("published") or raw_article.get("date") or "unknown-date"
 
     # title/excerpt translations
     title_triple = llm_translate_text_triple(raw_article["title"])
     excerpt_triple = llm_translate_text_triple(raw_article["excerpt"])
 
     # Audio for title and excerpt
-    title_audio = attach_tts_audio(text=raw_article["title"], s3=s3)
-    excerpt_audio = attach_tts_audio(text=raw_article["excerpt"], s3=s3)
+    title_audio = attach_tts_audio(text=raw_article["title"], s3=s3, date=published_date)
+    excerpt_audio = attach_tts_audio(text=raw_article["excerpt"], s3=s3, date=published_date)
 
     # split into sentences
     sents = split_to_sentence_objects(raw_article.get("content", ""))
 
     annotated_sents = [
-        annotate_sentence(s["sid"], s["zh"], vocab_col, cedict_lexicon, hsk_words, s3)
+        annotate_sentence(s["sid"], s["zh"], vocab_col, cedict_lexicon, hsk_words, s3, published_date)
         for s in sents
         if s.get("zh") and s["zh"].strip()
     ]
