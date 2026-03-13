@@ -196,6 +196,15 @@ class TestResultIn(BaseModel):
     lastPassedAt: int         # ms epoch
 
 
+@app.get("/user/data")
+async def get_user_data(uid: str = Depends(get_firebase_user_id)):
+    col = user_data_col()
+    doc = col.find_one({"uid": uid}, {"_id": 0, "uid": 0, "updatedAt": 0})
+    if not doc:
+        return {"tokens": [], "history": [], "tests": {}}
+    return doc
+
+
 @app.post("/feedback", status_code=204)
 async def create_feedback(payload: FeedbackIn, request: Request):
     msg = payload.message.strip()
