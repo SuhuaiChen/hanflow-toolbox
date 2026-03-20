@@ -8,3 +8,4 @@ openai
 certifi
 pyjwt[crypto]
 pydantic[email]
+stripe

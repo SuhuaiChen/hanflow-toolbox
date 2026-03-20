@@ -109,7 +109,11 @@ def health():
 @app.get("/me")
 async def me(request: Request) -> Dict[str, Any]:
     firebase_uid = await get_firebase_user_id_optional(request)
-    return {"isPro": True, "firebaseUid": firebase_uid}
+    if not firebase_uid:
+        return {"isPro": False, "firebaseUid": None}
+    doc = user_data_col().find_one({"uid": firebase_uid}, {"isPro": 1, "_id": 0})
+    is_pro = bool(doc.get("isPro", False)) if doc else False
+    return {"isPro": is_pro, "firebaseUid": firebase_uid}
 
 @app.get("/articles")
 def list_articles(
