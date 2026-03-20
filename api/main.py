@@ -1,7 +1,7 @@
 import os
 import stripe
 from typing import Any, Dict, Optional, List
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date as dt_date
 
 from fastapi import FastAPI, HTTPException, Request, Query, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -212,7 +212,8 @@ async def stripe_webhook(request: Request) -> Dict[str, Any]:
 
 
 @app.get("/articles")
-def list_articles(
+async def list_articles(
+    request: Request,
     level: Optional[str] = Query(default=None),
     date: Optional[str] = Query(default=None),
     limit: int = Query(5, ge=1, le=50),
@@ -231,7 +232,36 @@ def list_articles(
 
     docs = list(col.find(q, _article_projection_list()).sort("_id", DESCENDING).limit(limit))
     next_cursor = docs[-1].get("_id") if len(docs) == limit else None
-    return {"items": _normalize_items(docs), "nextCursor": next_cursor, "date": q.get("date")}
+    items = _normalize_items(docs)
+
+    # Article limit for authenticated free users (1 per level per day)
+    uid = await get_firebase_user_id_optional(request)
+    if uid:
+        user_doc = user_data_col().find_one({"uid": uid}, {"isPro": 1, "history": 1, "_id": 0})
+        is_pro = bool((user_doc or {}).get("isPro", False))
+        if not is_pro:
+            today_utc = datetime.now(timezone.utc).date()  # always UTC
+            today_start_ms = int(datetime.combine(
+                today_utc, datetime.min.time(), tzinfo=timezone.utc
+            ).timestamp() * 1000)
+            history = (user_doc or {}).get("history", [])
+            # Count reads per level today
+            reads_today: Dict[str, int] = {}
+            for entry in history:
+                if entry.get("readAt", 0) >= today_start_ms:
+                    lv = (entry.get("level") or "").lower()
+                    reads_today[lv] = reads_today.get(lv, 0) + 1
+
+            read_this_session: Dict[str, int] = {}
+            for item in items:
+                lv = (item.get("level") or "").lower()
+                already_read = reads_today.get(lv, 0) + read_this_session.get(lv, 0)
+                if already_read >= 1:
+                    item["lockedByLimit"] = True
+                else:
+                    read_this_session[lv] = read_this_session.get(lv, 0) + 1
+
+    return {"items": items, "nextCursor": next_cursor, "date": q.get("date")}
 
 
 @app.get("/articles/{article_id}")
