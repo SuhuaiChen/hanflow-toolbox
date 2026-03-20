@@ -1,4 +1,5 @@
 import os
+import stripe
 from typing import Any, Dict, Optional, List
 from datetime import datetime, timezone
 
@@ -51,6 +52,13 @@ def feedback_col():
 def user_data_col():
     c = get_mongo_client()
     return c["core"]["user_data"]
+
+
+def get_stripe_client() -> stripe.StripeClient:
+    key = os.getenv("STRIPE_SECRET_KEY")
+    if not key:
+        raise HTTPException(status_code=500, detail="Stripe not configured")
+    return stripe.StripeClient(key)
 
 
 # ----------------------------
@@ -114,6 +122,52 @@ async def me(request: Request) -> Dict[str, Any]:
     doc = user_data_col().find_one({"uid": firebase_uid}, {"isPro": 1, "_id": 0})
     is_pro = bool(doc.get("isPro", False)) if doc else False
     return {"isPro": is_pro, "firebaseUid": firebase_uid}
+
+@app.post("/stripe/checkout")
+async def create_checkout_session(request: Request) -> Dict[str, Any]:
+    uid = await get_firebase_user_id(request)
+    client = get_stripe_client()
+    price_id = os.getenv("STRIPE_PRICE_ID")
+    if not price_id:
+        raise HTTPException(status_code=500, detail="STRIPE_PRICE_ID not configured")
+
+    # Look up existing stripeCustomerId if any
+    doc = user_data_col().find_one({"uid": uid}, {"stripeCustomerId": 1, "_id": 0})
+    existing_customer = doc.get("stripeCustomerId") if doc else None
+
+    session_params: Dict[str, Any] = {
+        "mode": "subscription",
+        "line_items": [{"price": price_id, "quantity": 1}],
+        "success_url": os.getenv("STRIPE_SUCCESS_URL", "https://hanflow-reading-app.web.app/pro?success=1"),
+        "cancel_url": os.getenv("STRIPE_CANCEL_URL", "https://hanflow-reading-app.web.app/pro"),
+        "metadata": {"firebaseUid": uid},
+    }
+    if existing_customer:
+        session_params["customer"] = existing_customer
+    else:
+        session_params["customer_creation"] = "always"
+
+    # Stripe Python SDK v7+: pass params as keyword argument `params=`
+    session = client.checkout.sessions.create(params=session_params)
+    return {"url": session.url}
+
+
+@app.post("/stripe/portal")
+async def create_portal_session(request: Request) -> Dict[str, Any]:
+    uid = await get_firebase_user_id(request)
+    doc = user_data_col().find_one({"uid": uid}, {"stripeCustomerId": 1, "_id": 0})
+    customer_id = doc.get("stripeCustomerId") if doc else None
+    if not customer_id:
+        raise HTTPException(status_code=404, detail="No subscription found")
+
+    client = get_stripe_client()
+    # Stripe Python SDK v7+: pass params as keyword argument `params=`
+    session = client.billing_portal.sessions.create(params={
+        "customer": customer_id,
+        "return_url": os.getenv("STRIPE_RETURN_URL", "https://hanflow-reading-app.web.app/pro"),
+    })
+    return {"url": session.url}
+
 
 @app.get("/articles")
 def list_articles(
