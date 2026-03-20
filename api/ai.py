@@ -27,7 +27,7 @@ LANG_NAMES: Dict[str, str] = {
 }
 
 CAT_SYSTEM = (
-    "You are 墨 (Mò), a witty ink-black cat who reads Chinese articles alongside language learners. "
+    "You are Tinta, a witty ink-black cat who reads Chinese articles alongside language learners. "
     "You are literary, a little sassy, and deeply knowledgeable about Chinese culture and language. "
     "You use cat mannerisms (* purrs *, * flicks tail *, * tilts head *) very sparingly — once at most per message. "
     "Keep all responses short (2–3 sentences max)."
@@ -53,6 +53,26 @@ async def _chat_json(prompt: str, max_tokens: int = 1000) -> Dict[str, Any]:
     return json.loads(resp.choices[0].message.content or "{}")
 
 
+async def _chat_multi(
+    system: str,
+    history: List[Dict[str, str]],
+    user_message: str,
+    max_tokens: int = 300,
+) -> str:
+    """Multi-turn chat returning a plain string (not JSON)."""
+    messages: List[Dict[str, str]] = [{"role": "system", "content": system}]
+    # Truncate history to last 6 items (3 exchange pairs)
+    messages.extend(history[-6:])
+    messages.append({"role": "user", "content": user_message})
+    resp = await _client().chat.completions.create(
+        model=MODEL,
+        messages=messages,
+        max_completion_tokens=max_tokens,
+        reasoning_effort="low",
+    )
+    return (resp.choices[0].message.content or "").strip()
+
+
 # ─── Cat Companion Endpoints ──────────────────────────────────────────────────
 
 class CatReactIn(BaseModel):
@@ -65,51 +85,62 @@ class CatReactIn(BaseModel):
 class CatAnswerIn(BaseModel):
     sentence_zh: str
     sentence_translation: str
+    article_zh: Optional[str] = None
     question: str
+    history: Optional[List[Dict[str, str]]] = None  # [{"role": "user"|"assistant", "content": str}]
     language: Language
 
 
 @router.post("/cat/answer")
 async def cat_answer(req: CatAnswerIn) -> Dict[str, Any]:
-    prompt = f"""{CAT_SYSTEM}
-
-Sentence just read:
-Chinese: {req.sentence_zh}
-Translation: {req.sentence_translation}
-
-Reader's question: "{req.question}"
-
-Respond with JSON: {{"message": "<your answer>"}}
-Answer in {LANG_NAMES[req.language]}. Be helpful and concise (2–3 sentences). Weave in a Chinese language or culture insight if relevant."""
-
-    data = await _chat_json(prompt, max_tokens=1000)
-
-    return {"message": data.get("message", "Mrow... interesting question.")}
+    article_context = f"\nFull article context:\n{req.article_zh}" if req.article_zh else ""
+    user_message = (
+        f"Sentence just read:\nChinese: {req.sentence_zh}\nTranslation: {req.sentence_translation}"
+        f"{article_context}\n\nReader's question: \"{req.question}\"\n\n"
+        f"Answer in {LANG_NAMES[req.language]}. Be helpful and concise (2–3 sentences). "
+        f"Weave in a Chinese language or culture insight if relevant. "
+        f"Respond with plain text, no JSON."
+    )
+    message = await _chat_multi(CAT_SYSTEM, req.history or [], user_message)
+    return {"message": message or "Mrow... interesting question."}
 
 
 class CatGuessIn(BaseModel):
     current_translation: str
     guess: str
     next_translation: str
+    article_zh: Optional[str] = None
+    history: Optional[List[Dict[str, str]]] = None
     language: Language
 
 
 @router.post("/cat/guess")
 async def cat_guess(req: CatGuessIn) -> Dict[str, Any]:
-    prompt = f"""{CAT_SYSTEM}
-
-What the reader just read: "{req.current_translation}"
-Reader's guess for the next sentence: "{req.guess}"
-Actual next sentence: "{req.next_translation}"
-
-Is the guess reasonably close in meaning or direction (exact match not required)?
-Respond with JSON: {{"isCorrect": true or false, "message": "<your response>"}}
-Respond in {LANG_NAMES[req.language]}.
-- If correct: celebrate briefly and playfully.
-- If wrong: tease gently without revealing the actual content; give a tiny directional hint at most.
-Keep under 30 words."""
-
-    data = await _chat_json(prompt, max_tokens=1000)
+    article_context = f"\nFull article context:\n{req.article_zh}" if req.article_zh else ""
+    user_message = (
+        f"What the reader just read: \"{req.current_translation}\""
+        f"{article_context}\n"
+        f"Reader's guess for the next sentence: \"{req.guess}\"\n"
+        f"Actual next sentence: \"{req.next_translation}\"\n\n"
+        f"Is the guess reasonably close in meaning or direction (exact match not required)?\n"
+        f"Respond in {LANG_NAMES[req.language]} with JSON: "
+        f'{{"isCorrect": true or false, "message": "<your response>"}}\n'
+        f"- If correct: celebrate briefly and playfully.\n"
+        f"- If wrong: tease gently without revealing the actual content; give a tiny directional hint at most.\n"
+        f"Keep under 30 words."
+    )
+    # Use multi-message construction for structured response
+    messages: List[Dict[str, str]] = [{"role": "system", "content": CAT_SYSTEM}]
+    messages.extend((req.history or [])[-6:])
+    messages.append({"role": "user", "content": user_message})
+    resp = await _client().chat.completions.create(
+        model=MODEL,
+        messages=messages,
+        response_format={"type": "json_object"},
+        max_completion_tokens=300,
+        reasoning_effort="low",
+    )
+    data = json.loads(resp.choices[0].message.content or "{}")
     return {
         "isCorrect": bool(data.get("isCorrect", False)),
         "message": data.get("message", "Hmm, not quite..."),
