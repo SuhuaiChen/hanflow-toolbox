@@ -169,6 +169,48 @@ async def create_portal_session(request: Request) -> Dict[str, Any]:
     return {"url": session.url}
 
 
+@app.post("/stripe/webhook")
+async def stripe_webhook(request: Request) -> Dict[str, Any]:
+    payload = await request.body()
+    sig = request.headers.get("stripe-signature", "")
+    webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
+    if not webhook_secret:
+        raise HTTPException(status_code=500, detail="STRIPE_WEBHOOK_SECRET not configured")
+
+    # Webhook verification uses the module-level stripe.Webhook (not StripeClient)
+    try:
+        event = stripe.Webhook.construct_event(payload, sig, webhook_secret)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid webhook signature")
+
+    col = user_data_col()
+    etype = event["type"]
+
+    if etype == "checkout.session.completed":
+        session = event["data"]["object"]
+        firebase_uid = (session.get("metadata") or {}).get("firebaseUid")
+        stripe_customer_id = session.get("customer")
+        if firebase_uid:
+            col.update_one(
+                {"uid": firebase_uid},
+                {"$set": {"isPro": True, "stripeCustomerId": stripe_customer_id}},
+                upsert=True,
+            )
+
+    elif etype in ("customer.subscription.updated", "customer.subscription.deleted"):
+        sub = event["data"]["object"]
+        stripe_customer_id = sub.get("customer")
+        status = sub.get("status", "")
+        is_pro = status in ("active", "trialing")
+        if stripe_customer_id:
+            col.update_one(
+                {"stripeCustomerId": stripe_customer_id},
+                {"$set": {"isPro": is_pro}},
+            )
+
+    return {"received": True}
+
+
 @app.get("/articles")
 def list_articles(
     level: Optional[str] = Query(default=None),
