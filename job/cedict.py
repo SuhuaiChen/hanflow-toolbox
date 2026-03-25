@@ -1,5 +1,5 @@
 import re
-from typing import Dict
+from typing import Dict, List
 from pypinyin import pinyin, Style
 
 def to_pinyin(word: str) -> str:
@@ -56,6 +56,52 @@ def cedict_lookup_pinyin(word: str, lexicon: Dict[str, dict]) -> str | None:
         return entry["pinyin"]
     return None
 
+def load_cedict_all(path: str) -> dict:
+    """
+    Return ALL CEDICT entries per simplified headword (not just the first).
+
+    {
+      "中": [
+        {"pinyin": "Zhong1", "senses": ["China", "Chinese"]},
+        {"pinyin": "zhong1", "senses": ["middle", "center", "within"]},
+        {"pinyin": "zhong4", "senses": ["hit (a target)", "to be hit"]},
+      ],
+      ...
+    }
+    """
+    lexicon: dict = {}
+
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            m = CEDICT_RE.match(line)
+            if not m:
+                continue
+            _trad, simp, py, senses_raw = m.groups()
+            senses = [s for s in senses_raw.split("/") if s]
+            lexicon.setdefault(simp, []).append({"pinyin": py, "senses": senses})
+
+    return lexicon
+
+
+def cedict_lookup_all(word: str, lexicon: dict) -> List[dict]:
+    """Return all CEDICT entries for word, or [] if not found."""
+    return lexicon.get(word, [])
+
+
+def cedict_entries_to_text(entries: List[dict]) -> str:
+    """Format CEDICT entries as a numbered text block for LLM context."""
+    if not entries:
+        return ""
+    lines = []
+    for i, entry in enumerate(entries, 1):
+        senses_str = "; ".join(entry["senses"])
+        lines.append(f"{i}. [{entry['pinyin']}] {senses_str}")
+    return "\n".join(lines)
+
+
 if __name__ == "__main__":
     cedict_path = "data/cedict_ts.u8"
     lexicon = load_cedict_simplified(cedict_path)
@@ -69,7 +115,7 @@ if __name__ == "__main__":
         print(f"Senses: {', '.join(entry['senses'])}")
     else:
         print(f"Word '{example_word}' not found in CEDICT.")
-    
+
     print(cedict_lookup_en(example_word, lexicon))
     print(to_pinyin(example_word))
     # TODO covert fa1 zhan3 to fāzhǎn
