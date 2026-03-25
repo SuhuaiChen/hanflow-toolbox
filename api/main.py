@@ -220,8 +220,28 @@ async def list_articles(
     cursor: Optional[str] = Query(default=None),
 ) -> Dict[str, Any]:
     col = articles_col()
-    limit = sanitize_limit(limit)
 
+    # Resolve Pro status
+    uid = await get_firebase_user_id_optional(request)
+    is_pro = False
+    if uid:
+        user_doc = user_data_col().find_one({"uid": uid}, {"isPro": 1, "_id": 0})
+        is_pro = bool((user_doc or {}).get("isPro", False))
+
+    # Free / guest users: return only today's article(s) — 1 per level, no pagination
+    if not is_pro:
+        today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        all_levels = ["beginner", "intermediate", "advanced"]
+        levels_to_fetch = [level.lower()] if level else all_levels
+        items: List[Dict[str, Any]] = []
+        for lv in levels_to_fetch:
+            doc = col.find_one({"date": today_str, "level": lv}, _article_projection_list())
+            if doc:
+                items.extend(_normalize_items([doc]))
+        return {"items": items, "nextCursor": None, "date": today_str}
+
+    # Pro users: full paginated feed
+    limit = sanitize_limit(limit)
     q: Dict[str, Any] = {}
     if level:
         q["level"] = level
@@ -232,36 +252,7 @@ async def list_articles(
 
     docs = list(col.find(q, _article_projection_list()).sort("_id", DESCENDING).limit(limit))
     next_cursor = docs[-1].get("_id") if len(docs) == limit else None
-    items = _normalize_items(docs)
-
-    # Article limit for authenticated free users (1 per level per day)
-    uid = await get_firebase_user_id_optional(request)
-    if uid:
-        user_doc = user_data_col().find_one({"uid": uid}, {"isPro": 1, "history": 1, "_id": 0})
-        is_pro = bool((user_doc or {}).get("isPro", False))
-        if not is_pro:
-            today_utc = datetime.now(timezone.utc).date()  # always UTC
-            today_start_ms = int(datetime.combine(
-                today_utc, datetime.min.time(), tzinfo=timezone.utc
-            ).timestamp() * 1000)
-            history = (user_doc or {}).get("history", [])
-            # Count reads per level today
-            reads_today: Dict[str, int] = {}
-            for entry in history:
-                if entry.get("readAt", 0) >= today_start_ms:
-                    lv = (entry.get("level") or "").lower()
-                    reads_today[lv] = reads_today.get(lv, 0) + 1
-
-            read_this_session: Dict[str, int] = {}
-            for item in items:
-                lv = (item.get("level") or "").lower()
-                already_read = reads_today.get(lv, 0) + read_this_session.get(lv, 0)
-                if already_read >= 1:
-                    item["lockedByLimit"] = True
-                else:
-                    read_this_session[lv] = read_this_session.get(lv, 0) + 1
-
-    return {"items": items, "nextCursor": next_cursor, "date": q.get("date")}
+    return {"items": _normalize_items(docs), "nextCursor": next_cursor, "date": q.get("date")}
 
 
 @app.get("/articles/{article_id}")
