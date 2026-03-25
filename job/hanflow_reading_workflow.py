@@ -5,7 +5,7 @@ from typing import Dict
 from pymongo import MongoClient
 from openai import OpenAI
 
-from cedict import load_cedict_simplified
+from cedict import load_cedict_simplified, load_cedict_all
 from hsk_data import load_hsk_words
 from scraper import scrape
 from selector import build_leveled_set
@@ -22,7 +22,8 @@ except Exception:
 def hanflow_reading_workflow(
     *,
     db_client: MongoClient,
-    lexicon,
+    lexicon,        # old simplified format (for transform_tokens in nlp)
+    cedict_all,     # new all-entries format (for dict enrichment)
     hsk_words: Dict[str, str],
     s3,
 ):
@@ -33,10 +34,11 @@ def hanflow_reading_workflow(
         raw_articles=leveled,
         articles_col=db_client["core"]["articles"],
         vocab_col=db_client["core"]["dict"],
+        cedict_all=cedict_all,
         cedict_lexicon=lexicon,
         hsk_words=hsk_words,
         s3=s3,
-        mode=os.getenv("ANNOTATE_MODE", "skip"),  # "skip" default saves time/cost
+        mode=os.getenv("ANNOTATE_MODE", "skip"),
     )
     return annotated
 
@@ -51,7 +53,8 @@ def main() -> int:
     hsk_path = os.getenv("HSK_PATH", "/app/data/words.csv")
 
     lexicon = load_cedict_simplified(cedict_path)
-    hsk_words = load_hsk_words(hsk_path) 
+    cedict_all = load_cedict_all(cedict_path)
+    hsk_words = load_hsk_words(hsk_path)
 
     s3 = r2_client()
     mongo_client = _build_mongo_client()
@@ -59,6 +62,7 @@ def main() -> int:
     annotated_articles = hanflow_reading_workflow(
         db_client=mongo_client,
         lexicon=lexicon,
+        cedict_all=cedict_all,
         hsk_words=hsk_words,
         s3=s3,
     )

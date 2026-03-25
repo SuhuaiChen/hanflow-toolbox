@@ -2,7 +2,6 @@ import logging
 from typing import Dict, Any, List, Tuple, Set
 from datetime import datetime, timezone
 from pymongo import UpdateOne
-from cedict import load_cedict_simplified
 from hsk_data import load_hsk_words
 from nlp import tokenize_with_pos, transform_tokens, split_to_sentence_objects
 from pinyin_convert import pinyin_num_to_tone
@@ -22,29 +21,31 @@ def make_article_id(raw: Dict[str, Any]) -> str:
 def _has_content(raw: Dict[str, Any]) -> bool:
     return bool((raw.get("content") or "").strip())
 
-def enrich_tokens_with_dict(tokens: List[Dict], vocab_col, cedict_lexicon, hsk_words, s3) -> List[Dict]:
-    """
-    tokens: output of transform_tokens(segmented)
-    returns: same tokens but meanings.en/es/pt guaranteed (for non-punct)
-    """
+def enrich_tokens_with_dict(tokens: List[Dict], vocab_col, cedict_all: dict, hsk_words, s3) -> List[Dict]:
     for tok in tokens:
         if tok.get("type") == "punct":
             tok["meanings"] = {}
             continue
 
         w = tok["t"]
-        entry = ensure_dict_entry(w, vocab_col, cedict_lexicon, hsk_words, s3)
+        entry = ensure_dict_entry(w, vocab_col, cedict_all, hsk_words, s3)
 
         tok.setdefault("meanings", {})
-        # Ensure strings (cedict might give list)
-        tok["meanings"]["en"] = entry["meanings"].get("en", "") or ""
-        tok["meanings"]["es"] = entry["meanings"].get("es", "") or ""
-        tok["meanings"]["pt"] = entry["meanings"].get("pt", "") or ""
+        # Read from new DictEntry format: senses[0].defn
+        senses = entry.get("senses") or []
+        primary = next((s for s in senses if s.get("primary")), senses[0] if senses else {})
+        defn = primary.get("defn", {})
+        tok["meanings"]["en"] = defn.get("en", "")
+        tok["meanings"]["es"] = defn.get("es", "")
+        tok["meanings"]["pt"] = defn.get("pt", "")
 
-        if entry.get("pinyin") and not tok.get("pinyin"):
-            tok["pinyin"] = pinyin_num_to_tone(entry["pinyin"])
+        # Read pinyin from py[0].mark
+        py_list = entry.get("py") or []
+        if py_list and not tok.get("pinyin"):
+            tok["pinyin"] = py_list[0].get("mark", "")
 
-        tok["audio"] = entry.get("audio", "")
+        # Read audio from py[0].audio
+        tok["audio"] = py_list[0].get("audio", "") if py_list else ""
 
     return tokens
 
@@ -52,40 +53,26 @@ def annotate_sentence(
     sid: str,
     zh: str,
     vocab_col,
-    cedict_lexicon,
+    cedict_all: dict,
     hsk_words: Dict[str, str],
     s3,
-    date: str = ""
+    date: str = "",
+    cedict_lexicon=None,   # old simplified format, for transform_tokens
 ) -> Dict[str, Any]:
-    # 1) translate sentence
     triple = llm_translate_text_triple(zh)
-
-    # 2) tokenize with POS
     segmented: List[Tuple[str, str]] = tokenize_with_pos(zh)
-
-    # 3) transform tokens into target schema-ish tokens
-    tokens = transform_tokens(segmented, cedict_lexicon, hsk_words)
-
-    # 4) enrich meanings via Mongo cache (and fill missing)
-    tokens = enrich_tokens_with_dict(tokens, vocab_col, cedict_lexicon, hsk_words, s3)
-
-    # TTS
+    tokens = transform_tokens(segmented, cedict_lexicon or {}, hsk_words)
+    tokens = enrich_tokens_with_dict(tokens, vocab_col, cedict_all, hsk_words, s3)
     audio_url = attach_tts_audio(text=zh, s3=s3, date=date)
-
-    return {
-        "sid": sid,
-        "zh": zh,
-        "translations": triple,
-        "tokens": tokens,
-        "audio": audio_url,
-    }
+    return {"sid": sid, "zh": zh, "translations": triple, "tokens": tokens, "audio": audio_url}
 
 def annotate_article(
     raw_article: Dict[str, Any],
     vocab_col,
-    cedict_lexicon,
+    cedict_all: dict,
     hsk_words: Dict[str, str],
-    s3
+    s3,
+    cedict_lexicon=None,   # old simplified format, passed down to transform_tokens
 ) -> Dict[str, Any]:
     """
     raw_article input structure:
@@ -115,7 +102,7 @@ def annotate_article(
     sents = split_to_sentence_objects(raw_article.get("content", ""))
 
     annotated_sents = [
-        annotate_sentence(s["sid"], s["zh"], vocab_col, cedict_lexicon, hsk_words, s3, published_date)
+        annotate_sentence(s["sid"], s["zh"], vocab_col, cedict_all, hsk_words, s3, published_date, cedict_lexicon=cedict_lexicon)
         for s in sents
         if s.get("zh") and s["zh"].strip()
     ]
@@ -129,7 +116,7 @@ def annotate_article(
         "excerptAudio": excerpt_audio,
         "excerptTranslations": excerpt_triple,
         "level": raw_article.get("level") or "intermediate",
-        "date": raw_article.get("published") or raw_article.get("date") or "unknown-date",  
+        "date": raw_article.get("published") or raw_article.get("date") or "unknown-date",
         "sentences": annotated_sents,
         "meta": {
             "source": raw_article.get("source"),
@@ -170,7 +157,8 @@ def annotate_articles(
     *,
     articles_col,          # Mongo collection: core.articles
     vocab_col,
-    cedict_lexicon,
+    cedict_all: dict,
+    cedict_lexicon=None,
     hsk_words: Dict[str, str],
     s3,
     mode: str = "skip",    # "skip" | "upsert"
@@ -221,6 +209,7 @@ def annotate_articles(
         doc = annotate_article(
             raw_article=raw,
             vocab_col=vocab_col,
+            cedict_all=cedict_all,
             cedict_lexicon=cedict_lexicon,
             hsk_words=hsk_words,
             s3=s3
@@ -236,7 +225,9 @@ def annotate_articles(
 
 
 if __name__ == "__main__":
+    from cedict import load_cedict_simplified, load_cedict_all
     lexicon = load_cedict_simplified("data/cedict_ts.u8")
+    cedict_all_data = load_cedict_all("data/cedict_ts.u8")
     hsk_words = load_hsk_words()
     client = create_mongo_client()
     db = client["core"]
@@ -246,8 +237,8 @@ if __name__ == "__main__":
         sid="s1",
         zh=test_sentence,
         vocab_col=vocab_col,
+        cedict_all=cedict_all_data,
+        hsk_words=hsk_words,
         cedict_lexicon=lexicon,
-        hsk_words=hsk_words
     )
     print(annotated)
-
