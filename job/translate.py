@@ -118,6 +118,143 @@ SCHEMA_TRIPLE = {
 }
 
 # -------------------------
+# Dict enrichment schema + function
+# -------------------------
+
+_REGISTER_TAGS = [
+    "daily", "spoken", "written", "formal", "casual",
+    "colloquial", "slang", "internet", "figurative",
+    "textbook", "polite", "blunt",
+]
+
+_VIBE_TAGS = [
+    "warm", "soft", "cute", "playful", "cool", "sharp",
+    "blunt", "judgmental", "emotional", "serious", "trendy",
+    "professional", "everyday", "traditional-food", "intimate",
+]
+
+_POS_TAGS = ["n", "v", "adj", "adv", "pron", "prep", "conj", "mw", "idiom", "phrase"]
+
+_LANG_TEXT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "en": {"type": "string"},
+        "es": {"type": "string"},
+        "pt": {"type": "string"},
+    },
+    "required": ["en", "es", "pt"],
+    "additionalProperties": False,
+}
+
+SCHEMA_DICT_ENTRY: dict = {
+    "type": "object",
+    "properties": {
+        "senses": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id":      {"type": "integer"},
+                    "primary": {"type": "boolean"},
+                    "pos":     {"type": "string", "enum": _POS_TAGS},
+                    "defn":    _LANG_TEXT_SCHEMA,
+                    "reg":     {"type": "array", "items": {"type": "string", "enum": _REGISTER_TAGS}},
+                    "vibe":    {"type": "array", "items": {"type": "string", "enum": _VIBE_TAGS}},
+                    "nat": {
+                        "type": "object",
+                        "properties": {
+                            "sp":  {"type": "number", "minimum": 0, "maximum": 1},
+                            "wr":  {"type": "number", "minimum": 0, "maximum": 1},
+                            "net": {"type": "number", "minimum": 0, "maximum": 1},
+                        },
+                        "required": ["sp", "wr", "net"],
+                        "additionalProperties": False,
+                    },
+                    "ex": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "zh": {"type": "string"},
+                                "py": {"type": "string"},
+                                "tr": _LANG_TEXT_SCHEMA,
+                            },
+                            "required": ["zh", "py", "tr"],
+                            "additionalProperties": False,
+                        },
+                    },
+                },
+                "required": ["id", "primary", "pos", "defn", "reg", "vibe", "nat", "ex"],
+                "additionalProperties": False,
+            },
+        },
+        "pos": {
+            "type": "array",
+            "items": {"type": "string", "enum": _POS_TAGS},
+        },
+        "clf": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "hz":   {"type": "string"},
+                    "num":  {"type": "string"},
+                    "mark": {"type": "string"},
+                },
+                "required": ["hz", "num", "mark"],
+                "additionalProperties": False,
+            },
+        },
+        "search_kw": {
+            "type": "object",
+            "properties": {
+                "en": {"type": "array", "items": {"type": "string"}},
+                "es": {"type": "array", "items": {"type": "string"}},
+                "pt": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["en", "es", "pt"],
+            "additionalProperties": False,
+        },
+    },
+    "required": ["senses", "pos", "clf", "search_kw"],
+    "additionalProperties": False,
+}
+
+_DICT_ENRICH_INSTRUCTIONS = (
+    "You are a Chinese lexicographer for Spanish and Portuguese learners. "
+    "Given a Chinese word and its CEDICT entries, produce a structured dictionary entry. "
+    "Use CEDICT senses as the basis for splitting senses — do not invent senses absent from the source. "
+    "If no CEDICT entries are provided, infer senses from the word itself. "
+    "Generate one example sentence per sense. Be concise."
+)
+
+
+def llm_enrich_dict_entry(hz: str, cedict_text: str) -> dict:
+    """
+    Call OpenAI to enrich a Chinese word into the DictEntry sense structure.
+
+    Args:
+        hz: simplified Chinese headword
+        cedict_text: formatted CEDICT entries from cedict_entries_to_text(),
+                     or empty string if no CEDICT entry exists
+
+    Returns:
+        dict with keys: senses, pos, clf, search_kw
+    """
+    payload: Dict[str, Any] = {"word": hz}
+    if cedict_text:
+        payload["cedict_entries"] = cedict_text
+
+    return _json_schema_call(
+        model=CFG.model_gloss,
+        instructions=_DICT_ENRICH_INSTRUCTIONS,
+        payload=payload,
+        schema=SCHEMA_DICT_ENTRY,
+        max_retries=CFG.max_retries,
+        base_sleep=CFG.base_sleep,
+    )
+
+# -------------------------
 # Public functions
 # -------------------------
 
